@@ -511,6 +511,22 @@
         font-size: 0.9rem;
       }
 
+      .debug-panel {
+        display: none;
+        background: #0a0a0a;
+        border: 1px solid #333;
+        border-radius: 10px;
+        padding: 1rem 1.5rem;
+        margin-bottom: 1.5rem;
+        font-size: 0.78rem;
+        font-family: monospace;
+        color: #7fffb4;
+        white-space: pre-wrap;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      .debug-panel.visible { display: block; }
+
       .error-banner {
         background: #1e0a0a;
         border: 1px solid #7f1d1d;
@@ -555,7 +571,7 @@
     </div>
 
     <!-- HEADER -->
-    <header class="site-header">
+    <header class="site-header" ondblclick="toggleDebug()">
       <div class="logo">🛒</div>
       <div class="header-text">
         <h1>LTD Gasoline</h1>
@@ -573,6 +589,9 @@
         est correct et publié.
         <br /><small id="errorDetail"></small>
       </div>
+
+      <!-- DEBUG PANEL (double-clic sur le header pour afficher) -->
+      <div class="debug-panel" id="debugPanel"></div>
 
       <!-- KPI TABLEAU -->
       <div class="kpi-table-wrap">
@@ -793,6 +812,22 @@
     </footer>
 
     <script>
+      let _rawCSVDebug = "";
+
+      function toggleDebug() {
+        const panel = document.getElementById("debugPanel");
+        if (!panel.classList.contains("visible")) {
+          const kpiStr = JSON.stringify(KPI_DATA, null, 2);
+          const v0 = ALL_VENDEURS[0] ? JSON.stringify(ALL_VENDEURS[0], null, 2) : "aucun";
+          const r0 = ALL_RUNNERS[0] ? JSON.stringify(ALL_RUNNERS[0], null, 2) : "aucun";
+          const csvPrev = _rawCSVDebug ? _rawCSVDebug.split("\n").slice(0, 15).join("\n") : "(non disponible)";
+          panel.textContent = `=== KPI ===\n${kpiStr}\n\n=== VENDEUR #1 ===\n${v0}\n\n=== RUNNER #1 ===\n${r0}\n\n=== CSV (15 premières lignes) ===\n${csvPrev}`;
+          panel.classList.add("visible");
+        } else {
+          panel.classList.remove("visible");
+        }
+      }
+
       /* ════════════ DATA STORE ════════════ */
       let ALL_VENDEURS = [];
       let ALL_RUNNERS = [];
@@ -815,6 +850,7 @@
             return r.text();
           })
           .then((csv) => {
+            _rawCSVDebug = csv;
             parseCSV(csv);
             document.getElementById("lastUpdate").textContent =
               "Mis à jour · " + new Date().toLocaleTimeString("fr-FR");
@@ -828,132 +864,256 @@
       }
 
       /* ════════════ PARSE CSV ════════════ */
-      function parseCSV(csv) {
-        const rows = csv.split("\n").map((r) => {
-          const cells = [];
-          let cur = "",
-            inQ = false;
-          for (let i = 0; i < r.length; i++) {
-            const ch = r[i];
-            if (ch === '"') {
-              inQ = !inQ;
-            } else if (ch === "," && !inQ) {
-              cells.push(cur.trim());
-              cur = "";
-            } else cur += ch;
+
+      // Parses a single CSV line correctly handling quoted fields
+      function parseCSVLine(line) {
+        const cells = [];
+        let cur = "", inQ = false;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          if (ch === '"') {
+            if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+            else inQ = !inQ;
+          } else if (ch === ',' && !inQ) {
+            cells.push(cur.trim());
+            cur = "";
+          } else {
+            cur += ch;
           }
-          cells.push(cur.trim());
-          return cells;
-        });
+        }
+        cells.push(cur.trim());
+        return cells;
+      }
+
+      // Strips $ signs, spaces and commas then parses as float
+      function parseMoney(s) {
+        if (!s && s !== 0) return 0;
+        const clean = String(s).replace(/[$\s]/g, "").replace(/,/g, "").replace(/\s/g, "");
+        const v = parseFloat(clean);
+        return isNaN(v) ? 0 : v;
+      }
+
+      // Parses a percentage cell: "25%" → 0.25, "0.25" → 0.25, "25" → 0.25
+      function parsePct(s) {
+        if (!s) return 0;
+        const str = String(s).trim();
+        if (str.includes('%')) return parseFloat(str) / 100;
+        const v = parseFloat(str);
+        if (isNaN(v)) return 0;
+        // If stored as a decimal like 0.25, keep it; if stored as 25, divide
+        return v > 1 ? v / 100 : v;
+      }
+
+      // Finds the index of a column by matching header keywords (case-insensitive)
+      function findCol(headers, ...keywords) {
+        for (let i = 0; i < headers.length; i++) {
+          const h = headers[i].toLowerCase().replace(/[^a-zàâéèêëîïôùûüç%#0-9]/g, " ").trim();
+          if (keywords.some(kw => h.includes(kw.toLowerCase()))) return i;
+        }
+        return -1;
+      }
+
+      function parseCSV(csv) {
+        // Normalize line endings
+        const lines = csv.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+        const rows = lines.map(parseCSVLine);
 
         ALL_VENDEURS = [];
         ALL_RUNNERS = [];
         KPI_DATA = {};
 
-        let inVendeurs = false,
-          inRunners = false;
-
+        // ── Detect KPI rows (scan all rows for keyword matches) ──
         for (let i = 0; i < rows.length; i++) {
           const r = rows[i];
-          const rowStr = r.join(" ").toLowerCase();
+          const full = r.join(" ").toLowerCase();
+          const norm = full.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // strip accents for comparison
 
-          if (rowStr.includes("total employés"))
+          if (norm.includes("total employ")) {
             KPI_DATA.employes = extractLast(r);
-          if (
-            rowStr.includes("total payes") &&
-            !rowStr.includes("vendeurs") &&
-            !rowStr.includes("runners")
-          )
-            KPI_DATA.payes = extractLast(r);
-          if (rowStr.includes("total chiffres")) KPI_DATA.ca = extractLast(r);
-          if (
-            rowStr.includes("total  dépenses") ||
-            (rowStr.includes("total dépenses") &&
-              !rowStr.includes("entreprise"))
-          )
-            KPI_DATA.depenses = extractLast(r);
-          if (
-            rowStr.includes("total bénéfces") ||
-            rowStr.includes("total bénéfices")
-          )
-            KPI_DATA.benefice = extractLast(r);
-          if (rowStr.includes("total taxes")) KPI_DATA.taxes = extractLast(r);
-          if (rowStr.includes("total boosters vendus"))
+          }
+          if ((norm.includes("total pay") || norm.includes("total paye")) &&
+              !norm.includes("vendeur") && !norm.includes("runner")) {
+            KPI_DATA.payes = extractLastMoney(r);
+          }
+          if (norm.includes("total chiffre")) {
+            KPI_DATA.ca = extractLastMoney(r);
+          }
+          if ((norm.includes("total dep") || norm.includes("total dép")) &&
+              !norm.includes("entreprise") && !norm.includes("vendeur")) {
+            KPI_DATA.depenses = extractLastMoney(r);
+          }
+          if (norm.includes("total ben") || norm.includes("total bén")) {
+            KPI_DATA.benefice = extractLastMoney(r);
+          }
+          if (norm.includes("total taxe")) {
+            KPI_DATA.taxes = extractLastMoney(r);
+          }
+          if (norm.includes("total booster")) {
             KPI_DATA.boosters = extractLast(r);
-          if (rowStr.includes("total pochettes"))
+          }
+          if (norm.includes("total pochette")) {
             KPI_DATA.pochettes = extractLast(r);
-
-          if (rowStr.includes("liste vendeurs")) {
-            inVendeurs = true;
-            inRunners = false;
-            continue;
           }
-          if (rowStr.includes("liste runners")) {
-            inRunners = true;
-            inVendeurs = false;
-            continue;
-          }
-          if (
-            rowStr.includes("nom & prénom") ||
-            rowStr.includes("nom & prenom")
-          )
-            continue;
+        }
 
-          if (inVendeurs) {
-            const num = parseFloat(r[6]);
-            if (!isNaN(num) && num >= 1 && num <= 50) {
-              const nom = (r[8] || "").replace(/^"|"$/g, "").trim();
-              if (!nom) continue;
-              ALL_VENDEURS.push({
-                num,
-                date: (r[7] || "").replace(/^"|"$/g, "").trim(),
-                nom,
-                grade: (r[10] || "").replace(/^"|"$/g, "").trim(),
-                pct: parseFloat(r[11]) || 0,
-                pochettes: parseFloat(r[12]) || 0,
-                boosters: parseFloat(r[13]) || 0,
-                facturesBrut: parseFloat(r[14]) || 0,
-                bonusBooster: parseFloat(r[15]) || 0,
-                facturesNet: parseFloat(r[16]) || 0,
-                primes: parseFloat(r[17]) || 0,
-                paye: parseFloat(r[18]) || 0,
-                avert: (r[19] || "").replace(/^"|"$/g, "").trim(),
-                rank: (r[20] || "").replace(/^"|"$/g, "").trim(),
-              });
+        // ── Find vendeurs section ──
+        let vendeurHeaderIdx = -1, runnerHeaderIdx = -1;
+        for (let i = 0; i < rows.length; i++) {
+          const full = rows[i].join(" ").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          if (full.includes("liste vendeur")) vendeurHeaderIdx = i;
+          if (full.includes("liste runner")) runnerHeaderIdx = i;
+        }
+
+        // ── Parse Vendeurs ──
+        if (vendeurHeaderIdx >= 0) {
+          // Find the header row right after "Liste Vendeurs"
+          let hIdx = -1;
+          for (let i = vendeurHeaderIdx + 1; i < rows.length && i < vendeurHeaderIdx + 5; i++) {
+            const full = rows[i].join(" ").toLowerCase();
+            if (full.includes("nom") && (full.includes("pr") || full.includes("grade"))) {
+              hIdx = i; break;
             }
           }
+          if (hIdx < 0) hIdx = vendeurHeaderIdx + 1;
+          const hdr = rows[hIdx];
 
-          if (inRunners) {
-            const num = parseFloat(r[6]);
-            if (!isNaN(num) && num >= 1 && num <= 50) {
-              const nom = (r[8] || "").replace(/^"|"$/g, "").trim();
-              if (!nom) continue;
-              ALL_RUNNERS.push({
-                num,
-                date: (r[7] || "").replace(/^"|"$/g, "").trim(),
-                nom,
-                grade: (r[10] || "").replace(/^"|"$/g, "").trim(),
-                runs: parseFloat(r[11]) || 0,
-                bonus: (r[12] || "").replace(/^"|"$/g, "").trim(),
-                primes: parseFloat(r[14]) || 0,
-                partEnt: parseFloat(r[16]) || 0,
-                benefEnt: parseFloat(r[17]) || 0,
-                paye: parseFloat(r[18]) || 0,
-                avert: (r[19] || "").replace(/^"|"$/g, "").trim(),
-                rank: (r[20] || "").replace(/^"|"$/g, "").trim(),
-              });
+          // Detect column positions from headers
+          const cNum   = findCol(hdr, "#", "num", "n°");
+          const cDate  = findCol(hdr, "date");
+          const cNom   = findCol(hdr, "nom");
+          const cGrade = findCol(hdr, "grade");
+          const cPct   = findCol(hdr, "%", "pourcent", "pourcentage");
+          const cPoch  = findCol(hdr, "pochette");
+          const cBoos  = findCol(hdr, "booster");
+          const cFbru  = findCol(hdr, "brut", "facture brut");
+          const cBboo  = findCol(hdr, "bonus booster", "bonus boos");
+          const cFnet  = findCol(hdr, "net", "factures net");
+          const cPrim  = findCol(hdr, "prime", "primes grade");
+          const cPaye  = findCol(hdr, "paye total", "pay total", "paye");
+          const cAvert = findCol(hdr, "avert", "avertissement");
+          const cRank  = findCol(hdr, "class", "rank", "1er", "rang");
+
+          const endIdx = runnerHeaderIdx > 0 ? runnerHeaderIdx : rows.length;
+          for (let i = hIdx + 1; i < endIdx; i++) {
+            const r = rows[i];
+            if (r.every(c => !c)) continue;
+            const full = r.join(" ").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            if (full.includes("liste runner")) break;
+
+            // Detect row number – search all cells for a small integer
+            let num = -1;
+            for (let ci = 0; ci < Math.min(r.length, 12); ci++) {
+              const v = parseFloat(r[ci]);
+              if (!isNaN(v) && v >= 1 && v <= 50 && String(r[ci]).trim() === String(Math.round(v))) {
+                num = v; break;
+              }
             }
+            if (num < 1) continue;
+
+            const g = ci => (r[ci] >= 0 && r[ci] !== undefined) ? (r[ci] || "").replace(/^"|"$/g, "").trim() : "";
+            const nom = cNom >= 0 ? g(cNom) : "";
+            if (!nom) continue;
+
+            ALL_VENDEURS.push({
+              num,
+              date:         cDate  >= 0 ? g(cDate)                   : "",
+              nom,
+              grade:        cGrade >= 0 ? g(cGrade)                  : "",
+              pct:          cPct   >= 0 ? parsePct(r[cPct])          : 0,
+              pochettes:    cPoch  >= 0 ? parseMoney(r[cPoch])       : 0,
+              boosters:     cBoos  >= 0 ? parseMoney(r[cBoos])       : 0,
+              facturesBrut: cFbru  >= 0 ? parseMoney(r[cFbru])       : 0,
+              bonusBooster: cBboo  >= 0 ? parseMoney(r[cBboo])       : 0,
+              facturesNet:  cFnet  >= 0 ? parseMoney(r[cFnet])       : 0,
+              primes:       cPrim  >= 0 ? parseMoney(r[cPrim])       : 0,
+              paye:         cPaye  >= 0 ? parseMoney(r[cPaye])       : 0,
+              avert:        cAvert >= 0 ? g(cAvert)                  : "",
+              rank:         cRank  >= 0 ? g(cRank)                   : "",
+            });
+          }
+        }
+
+        // ── Parse Runners ──
+        if (runnerHeaderIdx >= 0) {
+          let hIdx = -1;
+          for (let i = runnerHeaderIdx + 1; i < rows.length && i < runnerHeaderIdx + 5; i++) {
+            const full = rows[i].join(" ").toLowerCase();
+            if (full.includes("nom") && (full.includes("run") || full.includes("grade"))) {
+              hIdx = i; break;
+            }
+          }
+          if (hIdx < 0) hIdx = runnerHeaderIdx + 1;
+          const hdr = rows[hIdx];
+
+          const cNum    = findCol(hdr, "#", "num", "n°");
+          const cDate   = findCol(hdr, "date");
+          const cNom    = findCol(hdr, "nom");
+          const cGrade  = findCol(hdr, "grade");
+          const cRuns   = findCol(hdr, "run", "runs effectu");
+          const cBonus  = findCol(hdr, "bonus");
+          const cPrim   = findCol(hdr, "prime");
+          const cPartE  = findCol(hdr, "part ent", "part entreprise");
+          const cBenef  = findCol(hdr, "benef", "bén", "benefice", "bénef");
+          const cPaye   = findCol(hdr, "paye total", "pay total", "paye");
+          const cRank   = findCol(hdr, "class", "rank", "1er", "rang");
+
+          for (let i = hIdx + 1; i < rows.length; i++) {
+            const r = rows[i];
+            if (r.every(c => !c)) continue;
+
+            let num = -1;
+            for (let ci = 0; ci < Math.min(r.length, 12); ci++) {
+              const v = parseFloat(r[ci]);
+              if (!isNaN(v) && v >= 1 && v <= 50 && String(r[ci]).trim() === String(Math.round(v))) {
+                num = v; break;
+              }
+            }
+            if (num < 1) continue;
+
+            const g = ci => (r[ci] >= 0 && r[ci] !== undefined) ? (r[ci] || "").replace(/^"|"$/g, "").trim() : "";
+            const nom = cNom >= 0 ? g(cNom) : "";
+            if (!nom) continue;
+
+            ALL_RUNNERS.push({
+              num,
+              date:     cDate  >= 0 ? g(cDate)              : "",
+              nom,
+              grade:    cGrade >= 0 ? g(cGrade)             : "",
+              runs:     cRuns  >= 0 ? parseMoney(r[cRuns])  : 0,
+              bonus:    cBonus >= 0 ? g(cBonus)             : "0%",
+              primes:   cPrim  >= 0 ? parseMoney(r[cPrim])  : 0,
+              partEnt:  cPartE >= 0 ? parseMoney(r[cPartE]) : 0,
+              benefEnt: cBenef >= 0 ? parseMoney(r[cBenef]) : 0,
+              paye:     cPaye  >= 0 ? parseMoney(r[cPaye])  : 0,
+              rank:     cRank  >= 0 ? g(cRank)              : "",
+            });
           }
         }
 
         renderKPIs();
         applyFilters();
+
+        // Debug console pour voir ce qui est parsé
+        console.log("✅ KPI:", KPI_DATA);
+        console.log("✅ Vendeurs:", ALL_VENDEURS.length, ALL_VENDEURS[0]);
+        console.log("✅ Runners:", ALL_RUNNERS.length, ALL_RUNNERS[0]);
       }
 
       function extractLast(r) {
         for (let i = r.length - 1; i >= 0; i--) {
           const v = parseFloat(r[i]);
           if (!isNaN(v)) return v;
+        }
+        return 0;
+      }
+
+      function extractLastMoney(r) {
+        for (let i = r.length - 1; i >= 0; i--) {
+          const v = parseMoney(r[i]);
+          if (v !== 0) return v;
+          // Also accept 0 if explicitly set
+          const clean = String(r[i]).replace(/[$\s,]/g, "");
+          if (clean === "0") return 0;
         }
         return 0;
       }
@@ -1107,16 +1267,15 @@
 
       function fmtDate(d) {
         if (!d) return "—";
-        // Handle datetime format from sheets: "2026-06-10 00:00:00"
-        const clean = d
-          .toString()
-          .replace(/\s?00:00:00$/, "")
+        const clean = d.toString()
+          .replace(/\s?\d{2}:\d{2}:\d{2}$/, "")
           .replace(/T.*/, "")
           .trim();
         if (!clean) return "—";
-        // If format is YYYY-MM-DD, convert to DD/MM/YYYY
-        const m = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+        const m1 = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (m1) return `${m1[3]}/${m1[2]}/${m1[1]}`;
+        const m2 = clean.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (m2) return `${String(m2[1]).padStart(2,"0")}/${String(m2[2]).padStart(2,"0")}/${m2[3]}`;
         return clean;
       }
 
