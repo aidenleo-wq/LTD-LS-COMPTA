@@ -922,113 +922,108 @@
         ALL_RUNNERS = [];
         KPI_DATA = {};
 
-        // ── Detect KPI rows (scan all rows for keyword matches) ──
+        // Helper: strip accents for fuzzy matching
+        const norm = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+        // ── Detect KPI rows ──
         for (let i = 0; i < rows.length; i++) {
           const r = rows[i];
-          const full = r.join(" ").toLowerCase();
-          const norm = full.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // strip accents for comparison
+          const n = norm(r.join(" "));
 
-          if (norm.includes("total employ")) {
-            KPI_DATA.employes = extractLast(r);
-          }
-          if ((norm.includes("total pay") || norm.includes("total paye")) &&
-              !norm.includes("vendeur") && !norm.includes("runner")) {
-            KPI_DATA.payes = extractLastMoney(r);
-          }
-          if (norm.includes("total chiffre")) {
-            KPI_DATA.ca = extractLastMoney(r);
-          }
-          if ((norm.includes("total dep") || norm.includes("total dép")) &&
-              !norm.includes("entreprise") && !norm.includes("vendeur")) {
-            KPI_DATA.depenses = extractLastMoney(r);
-          }
-          if (norm.includes("total ben") || norm.includes("total bén")) {
-            KPI_DATA.benefice = extractLastMoney(r);
-          }
-          if (norm.includes("total taxe")) {
-            KPI_DATA.taxes = extractLastMoney(r);
-          }
-          if (norm.includes("total booster")) {
-            KPI_DATA.boosters = extractLast(r);
-          }
-          if (norm.includes("total pochette")) {
-            KPI_DATA.pochettes = extractLast(r);
-          }
+          if (n.includes("total employ"))                                           KPI_DATA.employes = extractLast(r);
+          if (n.includes("total pay") && !n.includes("vendeur") && !n.includes("runner") && !n.includes("payes vendeur") && !n.includes("payes runner"))
+                                                                                   KPI_DATA.payes = extractLastMoney(r);
+          if (n.includes("total chiffre"))                                          KPI_DATA.ca = extractLastMoney(r);
+          if ((n.includes("total dep") || n.includes("total  dep")) && !n.includes("entreprise") && !n.includes("vendeur"))
+                                                                                   KPI_DATA.depenses = extractLastMoney(r);
+          if (n.includes("total ben") && !n.includes("entreprise"))                KPI_DATA.benefice = extractLastMoney(r);
+          if (n.includes("total taxe"))                                             KPI_DATA.taxes = extractLastMoney(r);
+          if (n.includes("total booster"))                                          KPI_DATA.boosters = extractLast(r);
+          if (n.includes("total pochette"))                                         KPI_DATA.pochettes = extractLast(r);
         }
 
-        // ── Find vendeurs section ──
+        // ── Find section marker rows ──
         let vendeurHeaderIdx = -1, runnerHeaderIdx = -1;
         for (let i = 0; i < rows.length; i++) {
-          const full = rows[i].join(" ").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-          if (full.includes("liste vendeur")) vendeurHeaderIdx = i;
-          if (full.includes("liste runner")) runnerHeaderIdx = i;
+          const n = norm(rows[i].join(" "));
+          if (n.includes("liste vendeur") && vendeurHeaderIdx < 0) vendeurHeaderIdx = i;
+          if (n.includes("liste runner")  && runnerHeaderIdx  < 0) runnerHeaderIdx  = i;
         }
+
+        // Helper: safely get a cell as trimmed string
+        const cell = (r, ci) => {
+          if (ci < 0 || ci >= r.length) return "";
+          return (r[ci] === null || r[ci] === undefined) ? "" : String(r[ci]).replace(/^"|"$/g, "").trim();
+        };
+
+        // Helper: detect row number – handles "1", "1.0", "2.0" etc.
+        const getNum = (r) => {
+          for (let ci = 0; ci < Math.min(r.length, 12); ci++) {
+            const s = cell(r, ci);
+            if (!s) continue;
+            const v = parseFloat(s);
+            if (!isNaN(v) && v >= 1 && v <= 50 && Math.abs(v - Math.round(v)) < 0.01) {
+              return Math.round(v);
+            }
+          }
+          return -1;
+        };
 
         // ── Parse Vendeurs ──
         if (vendeurHeaderIdx >= 0) {
-          // Find the header row right after "Liste Vendeurs"
+          // Find the header row (contains "Nom" and "Grade" or "Pourcent")
           let hIdx = -1;
-          for (let i = vendeurHeaderIdx + 1; i < rows.length && i < vendeurHeaderIdx + 5; i++) {
-            const full = rows[i].join(" ").toLowerCase();
-            if (full.includes("nom") && (full.includes("pr") || full.includes("grade"))) {
+          for (let i = vendeurHeaderIdx + 1; i < Math.min(rows.length, vendeurHeaderIdx + 6); i++) {
+            const n = norm(rows[i].join(" "));
+            if (n.includes("nom") && (n.includes("grade") || n.includes("pourcent") || n.includes("pochette"))) {
               hIdx = i; break;
             }
           }
           if (hIdx < 0) hIdx = vendeurHeaderIdx + 1;
           const hdr = rows[hIdx];
 
-          // Detect column positions from headers
-          const cNum   = findCol(hdr, "#", "num", "n°");
           const cDate  = findCol(hdr, "date");
           const cNom   = findCol(hdr, "nom");
           const cGrade = findCol(hdr, "grade");
-          const cPct   = findCol(hdr, "%", "pourcent", "pourcentage");
+          const cPct   = findCol(hdr, "pourcent", "pourcentage", "%");
           const cPoch  = findCol(hdr, "pochette");
           const cBoos  = findCol(hdr, "booster");
-          const cFbru  = findCol(hdr, "brut", "facture brut");
+          const cFbru  = findCol(hdr, "brut");
           const cBboo  = findCol(hdr, "bonus booster", "bonus boos");
-          const cFnet  = findCol(hdr, "net", "factures net");
-          const cPrim  = findCol(hdr, "prime", "primes grade");
-          const cPaye  = findCol(hdr, "paye total", "pay total", "paye");
-          const cAvert = findCol(hdr, "avert", "avertissement");
-          const cRank  = findCol(hdr, "class", "rank", "1er", "rang");
+          const cFnet  = findCol(hdr, "net");
+          const cPrim  = findCol(hdr, "prime");
+          const cPaye  = findCol(hdr, "paye");
+          const cAvert = findCol(hdr, "avert");
+
+          // Rank: column AFTER Paye (could be labeled "AVERTO", rank, classement...)
+          // Based on Excel: col 20 (index from G=6) → AVERTO column contains rank values like "1er", "2éme"
+          // In the CSV row structure, rank is the column after paye (cAvert col)
+          const cRank  = cAvert >= 0 ? cAvert : (cPaye >= 0 ? cPaye + 1 : -1);
 
           const endIdx = runnerHeaderIdx > 0 ? runnerHeaderIdx : rows.length;
           for (let i = hIdx + 1; i < endIdx; i++) {
             const r = rows[i];
-            if (r.every(c => !c)) continue;
-            const full = r.join(" ").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            if (full.includes("liste runner")) break;
-
-            // Detect row number – search all cells for a small integer
-            let num = -1;
-            for (let ci = 0; ci < Math.min(r.length, 12); ci++) {
-              const v = parseFloat(r[ci]);
-              if (!isNaN(v) && v >= 1 && v <= 50 && String(r[ci]).trim() === String(Math.round(v))) {
-                num = v; break;
-              }
-            }
+            if (r.every(c => !c || c === "")) continue;
+            const num = getNum(r);
             if (num < 1) continue;
-
-            const g = ci => (r[ci] >= 0 && r[ci] !== undefined) ? (r[ci] || "").replace(/^"|"$/g, "").trim() : "";
-            const nom = cNom >= 0 ? g(cNom) : "";
+            const nom = cNom >= 0 ? cell(r, cNom) : "";
             if (!nom) continue;
 
             ALL_VENDEURS.push({
               num,
-              date:         cDate  >= 0 ? g(cDate)                   : "",
+              date:         cDate  >= 0 ? cell(r, cDate)          : "",
               nom,
-              grade:        cGrade >= 0 ? g(cGrade)                  : "",
-              pct:          cPct   >= 0 ? parsePct(r[cPct])          : 0,
-              pochettes:    cPoch  >= 0 ? parseMoney(r[cPoch])       : 0,
-              boosters:     cBoos  >= 0 ? parseMoney(r[cBoos])       : 0,
-              facturesBrut: cFbru  >= 0 ? parseMoney(r[cFbru])       : 0,
-              bonusBooster: cBboo  >= 0 ? parseMoney(r[cBboo])       : 0,
-              facturesNet:  cFnet  >= 0 ? parseMoney(r[cFnet])       : 0,
-              primes:       cPrim  >= 0 ? parseMoney(r[cPrim])       : 0,
-              paye:         cPaye  >= 0 ? parseMoney(r[cPaye])       : 0,
-              avert:        cAvert >= 0 ? g(cAvert)                  : "",
-              rank:         cRank  >= 0 ? g(cRank)                   : "",
+              grade:        cGrade >= 0 ? cell(r, cGrade)         : "",
+              pct:          cPct   >= 0 ? parsePct(r[cPct])       : 0,
+              pochettes:    cPoch  >= 0 ? parseMoney(r[cPoch])    : 0,
+              boosters:     cBoos  >= 0 ? parseMoney(r[cBoos])    : 0,
+              facturesBrut: cFbru  >= 0 ? parseMoney(r[cFbru])    : 0,
+              bonusBooster: cBboo  >= 0 ? parseMoney(r[cBboo])    : 0,
+              facturesNet:  cFnet  >= 0 ? parseMoney(r[cFnet])    : 0,
+              primes:       cPrim  >= 0 ? parseMoney(r[cPrim])    : 0,
+              paye:         cPaye  >= 0 ? parseMoney(r[cPaye])    : 0,
+              avert:        cAvert >= 0 ? cell(r, cAvert)         : "",
+              rank:         cRank  >= 0 ? cell(r, cRank)          : "",
             });
           }
         }
@@ -1036,56 +1031,46 @@
         // ── Parse Runners ──
         if (runnerHeaderIdx >= 0) {
           let hIdx = -1;
-          for (let i = runnerHeaderIdx + 1; i < rows.length && i < runnerHeaderIdx + 5; i++) {
-            const full = rows[i].join(" ").toLowerCase();
-            if (full.includes("nom") && (full.includes("run") || full.includes("grade"))) {
+          for (let i = runnerHeaderIdx + 1; i < Math.min(rows.length, runnerHeaderIdx + 6); i++) {
+            const n = norm(rows[i].join(" "));
+            if (n.includes("nom") && (n.includes("run") || n.includes("grade") || n.includes("bonus"))) {
               hIdx = i; break;
             }
           }
           if (hIdx < 0) hIdx = runnerHeaderIdx + 1;
           const hdr = rows[hIdx];
 
-          const cNum    = findCol(hdr, "#", "num", "n°");
           const cDate   = findCol(hdr, "date");
           const cNom    = findCol(hdr, "nom");
           const cGrade  = findCol(hdr, "grade");
-          const cRuns   = findCol(hdr, "run", "runs effectu");
+          const cRuns   = findCol(hdr, "run");
           const cBonus  = findCol(hdr, "bonus");
           const cPrim   = findCol(hdr, "prime");
-          const cPartE  = findCol(hdr, "part ent", "part entreprise");
-          const cBenef  = findCol(hdr, "benef", "bén", "benefice", "bénef");
-          const cPaye   = findCol(hdr, "paye total", "pay total", "paye");
-          const cRank   = findCol(hdr, "class", "rank", "1er", "rang");
+          const cPartE  = findCol(hdr, "part");
+          const cBenef  = findCol(hdr, "benef", "ben");
+          const cPaye   = findCol(hdr, "paye");
+          const cRank   = findCol(hdr, "avert", "class", "rank");
 
           for (let i = hIdx + 1; i < rows.length; i++) {
             const r = rows[i];
-            if (r.every(c => !c)) continue;
-
-            let num = -1;
-            for (let ci = 0; ci < Math.min(r.length, 12); ci++) {
-              const v = parseFloat(r[ci]);
-              if (!isNaN(v) && v >= 1 && v <= 50 && String(r[ci]).trim() === String(Math.round(v))) {
-                num = v; break;
-              }
-            }
+            if (r.every(c => !c || c === "")) continue;
+            const num = getNum(r);
             if (num < 1) continue;
-
-            const g = ci => (r[ci] >= 0 && r[ci] !== undefined) ? (r[ci] || "").replace(/^"|"$/g, "").trim() : "";
-            const nom = cNom >= 0 ? g(cNom) : "";
+            const nom = cNom >= 0 ? cell(r, cNom) : "";
             if (!nom) continue;
 
             ALL_RUNNERS.push({
               num,
-              date:     cDate  >= 0 ? g(cDate)              : "",
+              date:     cDate  >= 0 ? cell(r, cDate)        : "",
               nom,
-              grade:    cGrade >= 0 ? g(cGrade)             : "",
+              grade:    cGrade >= 0 ? cell(r, cGrade)       : "",
               runs:     cRuns  >= 0 ? parseMoney(r[cRuns])  : 0,
-              bonus:    cBonus >= 0 ? g(cBonus)             : "0%",
+              bonus:    cBonus >= 0 ? cell(r, cBonus)       : "0%",
               primes:   cPrim  >= 0 ? parseMoney(r[cPrim])  : 0,
               partEnt:  cPartE >= 0 ? parseMoney(r[cPartE]) : 0,
               benefEnt: cBenef >= 0 ? parseMoney(r[cBenef]) : 0,
               paye:     cPaye  >= 0 ? parseMoney(r[cPaye])  : 0,
-              rank:     cRank  >= 0 ? g(cRank)              : "",
+              rank:     cRank  >= 0 ? cell(r, cRank)        : "",
             });
           }
         }
@@ -1093,10 +1078,11 @@
         renderKPIs();
         applyFilters();
 
-        // Debug console pour voir ce qui est parsé
+        // Console debug
         console.log("✅ KPI:", KPI_DATA);
-        console.log("✅ Vendeurs:", ALL_VENDEURS.length, ALL_VENDEURS[0]);
-        console.log("✅ Runners:", ALL_RUNNERS.length, ALL_RUNNERS[0]);
+        console.log("✅ Vendeurs:", ALL_VENDEURS.length, ALL_VENDEURS[0] || "aucun");
+        console.log("✅ Runners:", ALL_RUNNERS.length, ALL_RUNNERS[0] || "aucun");
+        console.log("✅ Headers vendeur row:", rows.slice(0,60).findIndex(r => norm(r.join(" ")).includes("date") && norm(r.join(" ")).includes("nom")));
       }
 
       function extractLast(r) {
