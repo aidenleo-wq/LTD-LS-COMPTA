@@ -1,0 +1,1189 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LTD Los Santos – Comptabilité Patron</title>
+    <meta
+      name="description"
+      content="Comptabilité Patron – LTD Los Santos – Diamond City RP"
+    />
+
+    <script>
+      const SHEET_CSV_URL =
+        "https://docs.google.com/spreadsheets/d/e/2PACX-1vQy0bA8ed8DcTUWojZ43mU4ynl4aPGNvm50M7Drk05yTaPqQi_VcI66g6cBDH9mvAXqDWpSzZDHfYbk/pub?gid=1151011798&single=true&output=csv";
+    </script>
+
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap");
+
+      :root {
+        --red: #c0282f;
+        --red-dark: #8a0e13;
+        --red-glow: rgba(192, 40, 47, 0.35);
+        --bg: #0b0d14;
+        --surface: #111520;
+        --surface-2: #181d2e;
+        --surface-3: #1e2438;
+        --border: rgba(255, 255, 255, 0.07);
+        --text: #e8eaf2;
+        --muted: #6b7494;
+        --green: #22c55e;
+        --amber: #f59e0b;
+        --blue: #3b82f6;
+        --pink: #ec4899;
+      }
+
+      *,
+      *::before,
+      *::after {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Inter", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+      }
+
+      /* ─── HEADER ─────────────────────────────────────── */
+      .site-header {
+        background: linear-gradient(180deg, #0f1220 0%, var(--bg) 100%);
+        border-bottom: 1px solid var(--border);
+        padding: 1.25rem 2rem;
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        backdrop-filter: blur(12px);
+      }
+
+      /* ─── LOGO (style Catalogue) ──────── */
+      .logo {
+        width: 62px;
+        height: 62px;
+        background: linear-gradient(135deg, #c0282f 0%, #6a0d10 100%);
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2rem;
+        box-shadow:
+          0 0 24px var(--red-glow),
+          0 4px 20px rgba(0, 0, 0, 0.5);
+        animation: floatLogo 3s ease-in-out infinite;
+        position: relative;
+        overflow: hidden;
+        flex-shrink: 0;
+      }
+      .logo::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          45deg,
+          transparent 30%,
+          rgba(255, 255, 255, 0.18) 50%,
+          transparent 70%
+        );
+        transform: translateX(-100%);
+        animation: shineLogo 3s 1s infinite;
+      }
+      @keyframes floatLogo {
+        0%,
+        100% {
+          transform: translateY(0px);
+        }
+        50% {
+          transform: translateY(-6px);
+        }
+      }
+      @keyframes shineLogo {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(200%);
+        }
+      }
+
+      .header-text h1 {
+        font-family: "Rajdhani", sans-serif;
+        font-size: 1.65rem;
+        font-weight: 700;
+        color: #fff;
+        letter-spacing: 0.5px;
+        line-height: 1.1;
+      }
+      .header-text span {
+        font-size: 0.76rem;
+        color: var(--muted);
+        letter-spacing: 2px;
+        text-transform: uppercase;
+      }
+
+      .header-right {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+      }
+      .refresh-btn {
+        background: var(--surface-3);
+        border: 1px solid var(--border);
+        color: var(--muted);
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        font-size: 0.82rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-family: "Inter", sans-serif;
+      }
+      .refresh-btn:hover {
+        color: var(--text);
+        border-color: var(--red);
+      }
+      .last-update {
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+
+      /* ─── LOADER ──────────────────────────────────────── */
+      .loader-overlay {
+        position: fixed;
+        inset: 0;
+        background: var(--bg);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      .loader-overlay.hidden {
+        display: none;
+      }
+      .spinner {
+        width: 44px;
+        height: 44px;
+        border: 3px solid var(--surface-3);
+        border-top-color: var(--red);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .loader-text {
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+
+      /* ─── MAIN ────────────────────────────────────────── */
+      .main {
+        max-width: 1500px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+
+      /* ─── KPI TABLE (style tableau Excel) ────────────── */
+      .kpi-table-wrap {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        overflow: hidden;
+        margin-bottom: 2rem;
+      }
+      .kpi-table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .kpi-table tr {
+        border-bottom: 1px solid var(--border);
+      }
+      .kpi-table tr:last-child {
+        border-bottom: none;
+      }
+      .kpi-table tr:hover {
+        background: var(--surface-2);
+      }
+
+      .kpi-table td {
+        padding: 0.7rem 1.2rem;
+        font-size: 0.88rem;
+      }
+      .kpi-table .kpi-row-label {
+        color: var(--muted);
+        text-transform: uppercase;
+        font-size: 0.72rem;
+        letter-spacing: 1.4px;
+        font-weight: 600;
+        width: 200px;
+      }
+      .kpi-table .kpi-row-bar {
+        padding: 0.5rem 1rem;
+      }
+      .kpi-bar-inner {
+        height: 12px;
+        border-radius: 6px;
+        background: linear-gradient(90deg, var(--red-dark), var(--red));
+        opacity: 0.7;
+        transition: width 0.6s ease;
+      }
+      .kpi-table .kpi-row-value {
+        text-align: right;
+        font-family: "Rajdhani", sans-serif;
+        font-size: 1.15rem;
+        font-weight: 700;
+        width: 160px;
+        white-space: nowrap;
+      }
+      .kpi-row-value.positive {
+        color: var(--green);
+      }
+      .kpi-row-value.negative {
+        color: var(--red);
+      }
+      .kpi-row-value.neutral {
+        color: var(--text);
+      }
+      .kpi-row-value.blue {
+        color: var(--blue);
+      }
+      .kpi-row-value.amber {
+        color: var(--amber);
+      }
+
+      /* ─── FILTER BAR ──────────────────────────────────── */
+      .filter-bar {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 1.2rem 1.5rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        align-items: center;
+        margin-bottom: 1.5rem;
+      }
+      .filter-bar label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--muted);
+      }
+      .filter-input {
+        background: var(--surface-3);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text);
+        padding: 0.5rem 0.9rem;
+        font-family: "Inter", sans-serif;
+        font-size: 0.88rem;
+        outline: none;
+        transition: border-color 0.2s;
+        min-width: 160px;
+      }
+      .filter-input:focus {
+        border-color: var(--red);
+      }
+      .chip-row {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      .chip {
+        background: var(--surface-3);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 0.35rem 0.85rem;
+        font-size: 0.78rem;
+        color: var(--muted);
+        cursor: pointer;
+        transition: all 0.2s;
+        white-space: nowrap;
+      }
+      .chip:hover {
+        border-color: var(--red);
+        color: var(--text);
+      }
+      .chip.active {
+        background: var(--red);
+        border-color: var(--red);
+        color: #fff;
+      }
+      .filter-divider {
+        width: 1px;
+        height: 28px;
+        background: var(--border);
+      }
+      .reset-btn {
+        background: transparent;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--muted);
+        padding: 0.5rem 0.9rem;
+        font-family: "Inter", sans-serif;
+        font-size: 0.82rem;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .reset-btn:hover {
+        border-color: var(--red);
+        color: var(--red);
+      }
+
+      /* ─── SECTION HEADER ──────────────────────────────── */
+      .section-header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1rem;
+      }
+      .section-title {
+        font-family: "Rajdhani", sans-serif;
+        font-size: 1.25rem;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: var(--text);
+      }
+      .section-count {
+        background: var(--surface-3);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 0.15rem 0.7rem;
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+
+      /* ─── TABLE ───────────────────────────────────────── */
+      .table-wrap {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        overflow: auto;
+        margin-bottom: 2rem;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.86rem;
+      }
+      thead tr {
+        background: var(--surface-3);
+      }
+      th {
+        padding: 0.85rem 1rem;
+        text-align: left;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+        color: var(--muted);
+        font-weight: 600;
+        white-space: nowrap;
+        cursor: pointer;
+        user-select: none;
+        transition: color 0.2s;
+      }
+      th:hover {
+        color: var(--text);
+      }
+      th .sort-arrow {
+        margin-left: 4px;
+        opacity: 0.4;
+      }
+      th.sorted .sort-arrow {
+        opacity: 1;
+        color: var(--red);
+      }
+      tbody tr {
+        border-top: 1px solid var(--border);
+        transition: background 0.15s;
+      }
+      tbody tr:hover {
+        background: var(--surface-2);
+      }
+      td {
+        padding: 0.75rem 1rem;
+        white-space: nowrap;
+      }
+
+      .col-name {
+        font-weight: 600;
+        color: var(--text);
+      }
+      .col-date {
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+      .col-pct {
+        color: var(--blue);
+        font-weight: 600;
+      }
+      .col-paye {
+        font-family: "Rajdhani", sans-serif;
+        font-size: 1rem;
+        font-weight: 700;
+      }
+      .col-positive {
+        color: var(--green);
+      }
+      .col-negative {
+        color: var(--red);
+      }
+      .col-zero {
+        color: var(--muted);
+      }
+      .col-factures {
+        color: var(--amber);
+      }
+
+      .grade {
+        display: inline-block;
+        padding: 0.2rem 0.6rem;
+        border-radius: 6px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .grade-patron {
+        background: #7c1d1d;
+        color: #fca5a5;
+      }
+      .grade-co-patron {
+        background: #5b2196;
+        color: #c4b5fd;
+      }
+      .grade-responsable {
+        background: #1e4d2b;
+        color: #86efac;
+      }
+      .grade-vendeur-exp {
+        background: #1a3a5c;
+        color: #93c5fd;
+      }
+      .grade-vendeur {
+        background: #1e293b;
+        color: #94a3b8;
+      }
+      .grade-runner {
+        background: #1a2e1a;
+        color: #6ee7b7;
+      }
+
+      /* Classement dans colonne Avert */
+      .rank {
+        display: inline-block;
+        padding: 0.2rem 0.6rem;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 700;
+      }
+      .rank-1er {
+        background: #78350f;
+        color: #fcd34d;
+      }
+      .rank-2eme {
+        background: #374151;
+        color: #d1d5db;
+      }
+      .rank-3eme {
+        background: #1c2030;
+        color: #94a3b8;
+      }
+
+      .empty-state {
+        padding: 3rem;
+        text-align: center;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .error-banner {
+        background: #1e0a0a;
+        border: 1px solid #7f1d1d;
+        border-radius: 10px;
+        padding: 1rem 1.5rem;
+        color: #fca5a5;
+        margin-bottom: 1.5rem;
+        font-size: 0.88rem;
+        display: none;
+      }
+      .error-banner.visible {
+        display: block;
+      }
+
+      .footer {
+        text-align: center;
+        padding: 2rem;
+        font-size: 0.75rem;
+        color: var(--muted);
+        border-top: 1px solid var(--border);
+        margin-top: 1rem;
+      }
+
+      @media (max-width: 768px) {
+        .main {
+          padding: 1rem;
+        }
+        .filter-bar {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .filter-divider {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="loader-overlay" id="loader">
+      <div class="spinner"></div>
+      <p class="loader-text">Chargement des données…</p>
+    </div>
+
+    <!-- HEADER -->
+    <header class="site-header">
+      <div class="logo">🛒</div>
+      <div class="header-text">
+        <h1>LTD Gasoline</h1>
+        <span>Comptabilité Patron · Diamond City RP 💎</span>
+      </div>
+      <div class="header-right">
+        <span class="last-update" id="lastUpdate">—</span>
+        <button class="refresh-btn" onclick="loadData()">↻ Actualiser</button>
+      </div>
+    </header>
+
+    <div class="main">
+      <div class="error-banner" id="errorBanner">
+        ⚠️ Impossible de charger les données. Vérifie que le lien Google Sheets
+        est correct et publié.
+        <br /><small id="errorDetail"></small>
+      </div>
+
+      <!-- KPI TABLEAU -->
+      <div class="kpi-table-wrap">
+        <table class="kpi-table">
+          <tbody id="kpiTableBody">
+            <tr>
+              <td class="kpi-row-label">Total Employés</td>
+              <td class="kpi-row-bar">
+                <div class="kpi-bar-inner" style="width: 60%"></div>
+              </td>
+              <td class="kpi-row-value neutral" id="kpi-employes">—</td>
+            </tr>
+            <tr>
+              <td class="kpi-row-label">Total Payes</td>
+              <td class="kpi-row-bar">
+                <div
+                  class="kpi-bar-inner"
+                  id="bar-payes"
+                  style="width: 80%"
+                ></div>
+              </td>
+              <td class="kpi-row-value amber" id="kpi-payes">—</td>
+            </tr>
+            <tr>
+              <td class="kpi-row-label">Total Chiffres</td>
+              <td class="kpi-row-bar">
+                <div class="kpi-bar-inner" id="bar-ca" style="width: 30%"></div>
+              </td>
+              <td class="kpi-row-value blue" id="kpi-ca">—</td>
+            </tr>
+            <tr>
+              <td class="kpi-row-label">Total Dépenses</td>
+              <td class="kpi-row-bar">
+                <div
+                  class="kpi-bar-inner"
+                  id="bar-depenses"
+                  style="width: 80%"
+                ></div>
+              </td>
+              <td class="kpi-row-value negative" id="kpi-depenses">—</td>
+            </tr>
+            <tr>
+              <td class="kpi-row-label">Total Bénéfices</td>
+              <td class="kpi-row-bar">
+                <div
+                  class="kpi-bar-inner"
+                  id="bar-benefice"
+                  style="width: 0%"
+                ></div>
+              </td>
+              <td class="kpi-row-value" id="kpi-benefice">—</td>
+            </tr>
+            <tr>
+              <td class="kpi-row-label">Total Taxes</td>
+              <td class="kpi-row-bar">
+                <div
+                  class="kpi-bar-inner"
+                  id="bar-taxes"
+                  style="width: 20%"
+                ></div>
+              </td>
+              <td class="kpi-row-value negative" id="kpi-taxes">—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- FILTER BAR -->
+      <div class="filter-bar">
+        <label>Recherche</label>
+        <input
+          class="filter-input"
+          id="searchInput"
+          type="text"
+          placeholder="Nom, grade…"
+          oninput="applyFilters()"
+        />
+        <div class="filter-divider"></div>
+        <label>Grade</label>
+        <div class="chip-row" id="gradeChips">
+          <div class="chip active" data-grade="" onclick="toggleGrade(this)">
+            Tous
+          </div>
+          <div class="chip" data-grade="Patron" onclick="toggleGrade(this)">
+            Patron
+          </div>
+          <div class="chip" data-grade="Co-Patron" onclick="toggleGrade(this)">
+            Co-Patron
+          </div>
+          <div
+            class="chip"
+            data-grade="Responsable"
+            onclick="toggleGrade(this)"
+          >
+            Responsable
+          </div>
+          <div
+            class="chip"
+            data-grade="Vendeur experimenté"
+            onclick="toggleGrade(this)"
+          >
+            Vendeur exp.
+          </div>
+          <div class="chip" data-grade="Vendeur" onclick="toggleGrade(this)">
+            Vendeur
+          </div>
+        </div>
+        <div class="filter-divider"></div>
+        <button class="reset-btn" onclick="resetFilters()">
+          ✕ Réinitialiser
+        </button>
+      </div>
+
+      <!-- VENDEURS -->
+      <div class="section-header">
+        <span class="section-title">👔 Liste Vendeurs</span>
+        <span class="section-count" id="vendeurCount">—</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th onclick="sortTable('vendeurs', 'num')">
+                #<span class="sort-arrow">↕</span>
+              </th>
+              <th onclick="sortTable('vendeurs', 'date')">
+                Date d'embauche<span class="sort-arrow">↕</span>
+              </th>
+              <th onclick="sortTable('vendeurs', 'nom')">
+                Nom & Prénom<span class="sort-arrow">↕</span>
+              </th>
+              <th onclick="sortTable('vendeurs', 'grade')">
+                Grade<span class="sort-arrow">↕</span>
+              </th>
+              <th onclick="sortTable('vendeurs', 'pct')">
+                %<span class="sort-arrow">↕</span>
+              </th>
+              <th onclick="sortTable('vendeurs', 'pochettes')">
+                Pochettes<span class="sort-arrow">↕</span>
+              </th>
+              <th onclick="sortTable('vendeurs', 'boosters')">
+                Boosters<span class="sort-arrow">↕</span>
+              </th>
+              <th onclick="sortTable('vendeurs', 'facturesBrut')">
+                Factures Brut<span class="sort-arrow">↕</span>
+              </th>
+              <th onclick="sortTable('vendeurs', 'bonusBooster')">
+                Bonus Booster<span class="sort-arrow">↕</span>
+              </th>
+              <th onclick="sortTable('vendeurs', 'facturesNet')">
+                Factures Net<span class="sort-arrow">↕</span>
+              </th>
+              <th onclick="sortTable('vendeurs', 'primes')">
+                Primes<span class="sort-arrow">↕</span>
+              </th>
+              <th onclick="sortTable('vendeurs', 'paye')">
+                Paye Totale<span class="sort-arrow">↕</span>
+              </th>
+              <th onclick="sortTable('vendeurs', 'rank')">
+                Classement<span class="sort-arrow">↕</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody id="vendeursTbody">
+            <tr>
+              <td colspan="13" class="empty-state">Chargement…</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RUNNERS -->
+      <div class="section-header" style="margin-top: 1rem">
+        <span class="section-title">🏃 Liste Runners</span>
+        <span class="section-count" id="runnerCount">—</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th onclick="sortTable('runners', 'num')">
+                #<span class="sort-arrow">↕</span>
+              </th>
+              <th onclick="sortTable('runners', 'date')">
+                Date d'embauche<span class="sort-arrow">↕</span>
+              </th>
+              <th onclick="sortTable('runners', 'nom')">
+                Nom & Prénom<span class="sort-arrow">↕</span>
+              </th>
+              <th>Grade</th>
+              <th onclick="sortTable('runners', 'runs')">
+                Runs effectués<span class="sort-arrow">↕</span>
+              </th>
+              <th>Bonus</th>
+              <th>Primes grades</th>
+              <th>Part entreprise</th>
+              <th>Bénef. entreprise</th>
+              <th onclick="sortTable('runners', 'paye')">
+                Paye Totale<span class="sort-arrow">↕</span>
+              </th>
+              <th onclick="sortTable('runners', 'rank')">
+                Classement<span class="sort-arrow">↕</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody id="runnersTbody">
+            <tr>
+              <td colspan="11" class="empty-state">Chargement…</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <footer class="footer">
+      LTD Gasoline · Diamond City RP 💎 · Fait avec ❤️ par Leo &amp; Bruna ·
+      Données Google Sheets en temps réel
+    </footer>
+
+    <script>
+      /* ════════════ DATA STORE ════════════ */
+      let ALL_VENDEURS = [];
+      let ALL_RUNNERS = [];
+      let KPI_DATA = {};
+      let activeGrade = "";
+      let sortState = {
+        vendeurs: { key: "num", dir: 1 },
+        runners: { key: "num", dir: 1 },
+      };
+
+      /* ════════════ FETCH ════════════ */
+      function loadData() {
+        document.getElementById("loader").classList.remove("hidden");
+        document.getElementById("errorBanner").classList.remove("visible");
+
+        const url = SHEET_CSV_URL + "&_t=" + Date.now();
+        fetch(url)
+          .then((r) => {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.text();
+          })
+          .then((csv) => {
+            parseCSV(csv);
+            document.getElementById("lastUpdate").textContent =
+              "Mis à jour · " + new Date().toLocaleTimeString("fr-FR");
+            document.getElementById("loader").classList.add("hidden");
+          })
+          .catch((err) => {
+            document.getElementById("loader").classList.add("hidden");
+            document.getElementById("errorBanner").classList.add("visible");
+            document.getElementById("errorDetail").textContent = err.message;
+          });
+      }
+
+      /* ════════════ PARSE CSV ════════════ */
+      function parseCSV(csv) {
+        const rows = csv.split("\n").map((r) => {
+          const cells = [];
+          let cur = "",
+            inQ = false;
+          for (let i = 0; i < r.length; i++) {
+            const ch = r[i];
+            if (ch === '"') {
+              inQ = !inQ;
+            } else if (ch === "," && !inQ) {
+              cells.push(cur.trim());
+              cur = "";
+            } else cur += ch;
+          }
+          cells.push(cur.trim());
+          return cells;
+        });
+
+        ALL_VENDEURS = [];
+        ALL_RUNNERS = [];
+        KPI_DATA = {};
+
+        let inVendeurs = false,
+          inRunners = false;
+
+        for (let i = 0; i < rows.length; i++) {
+          const r = rows[i];
+          const rowStr = r.join(" ").toLowerCase();
+
+          if (rowStr.includes("total employés"))
+            KPI_DATA.employes = extractLast(r);
+          if (
+            rowStr.includes("total payes") &&
+            !rowStr.includes("vendeurs") &&
+            !rowStr.includes("runners")
+          )
+            KPI_DATA.payes = extractLast(r);
+          if (rowStr.includes("total chiffres")) KPI_DATA.ca = extractLast(r);
+          if (
+            rowStr.includes("total  dépenses") ||
+            (rowStr.includes("total dépenses") &&
+              !rowStr.includes("entreprise"))
+          )
+            KPI_DATA.depenses = extractLast(r);
+          if (
+            rowStr.includes("total bénéfces") ||
+            rowStr.includes("total bénéfices")
+          )
+            KPI_DATA.benefice = extractLast(r);
+          if (rowStr.includes("total taxes")) KPI_DATA.taxes = extractLast(r);
+          if (rowStr.includes("total boosters vendus"))
+            KPI_DATA.boosters = extractLast(r);
+          if (rowStr.includes("total pochettes"))
+            KPI_DATA.pochettes = extractLast(r);
+
+          if (rowStr.includes("liste vendeurs")) {
+            inVendeurs = true;
+            inRunners = false;
+            continue;
+          }
+          if (rowStr.includes("liste runners")) {
+            inRunners = true;
+            inVendeurs = false;
+            continue;
+          }
+          if (
+            rowStr.includes("nom & prénom") ||
+            rowStr.includes("nom & prenom")
+          )
+            continue;
+
+          if (inVendeurs) {
+            const num = parseFloat(r[6]);
+            if (!isNaN(num) && num >= 1 && num <= 50) {
+              const nom = (r[8] || "").replace(/^"|"$/g, "").trim();
+              if (!nom) continue;
+              ALL_VENDEURS.push({
+                num,
+                date: (r[7] || "").replace(/^"|"$/g, "").trim(),
+                nom,
+                grade: (r[10] || "").replace(/^"|"$/g, "").trim(),
+                pct: parseFloat(r[11]) || 0,
+                pochettes: parseFloat(r[12]) || 0,
+                boosters: parseFloat(r[13]) || 0,
+                facturesBrut: parseFloat(r[14]) || 0,
+                bonusBooster: parseFloat(r[15]) || 0,
+                facturesNet: parseFloat(r[16]) || 0,
+                primes: parseFloat(r[17]) || 0,
+                paye: parseFloat(r[18]) || 0,
+                avert: (r[19] || "").replace(/^"|"$/g, "").trim(),
+                rank: (r[20] || "").replace(/^"|"$/g, "").trim(),
+              });
+            }
+          }
+
+          if (inRunners) {
+            const num = parseFloat(r[6]);
+            if (!isNaN(num) && num >= 1 && num <= 50) {
+              const nom = (r[8] || "").replace(/^"|"$/g, "").trim();
+              if (!nom) continue;
+              ALL_RUNNERS.push({
+                num,
+                date: (r[7] || "").replace(/^"|"$/g, "").trim(),
+                nom,
+                grade: (r[10] || "").replace(/^"|"$/g, "").trim(),
+                runs: parseFloat(r[11]) || 0,
+                bonus: (r[12] || "").replace(/^"|"$/g, "").trim(),
+                primes: parseFloat(r[14]) || 0,
+                partEnt: parseFloat(r[16]) || 0,
+                benefEnt: parseFloat(r[17]) || 0,
+                paye: parseFloat(r[18]) || 0,
+                avert: (r[19] || "").replace(/^"|"$/g, "").trim(),
+                rank: (r[20] || "").replace(/^"|"$/g, "").trim(),
+              });
+            }
+          }
+        }
+
+        renderKPIs();
+        applyFilters();
+      }
+
+      function extractLast(r) {
+        for (let i = r.length - 1; i >= 0; i--) {
+          const v = parseFloat(r[i]);
+          if (!isNaN(v)) return v;
+        }
+        return 0;
+      }
+
+      /* ════════════ KPI TABLE ════════════ */
+      function fmt(v) {
+        if (v === undefined || v === null || isNaN(v)) return "—";
+        return Math.round(v).toLocaleString("fr-FR") + " $";
+      }
+
+      function renderKPIs() {
+        document.getElementById("kpi-employes").textContent =
+          KPI_DATA.employes !== undefined ? KPI_DATA.employes : "—";
+        document.getElementById("kpi-payes").textContent = fmt(KPI_DATA.payes);
+        document.getElementById("kpi-ca").textContent = fmt(KPI_DATA.ca);
+        document.getElementById("kpi-depenses").textContent = fmt(
+          KPI_DATA.depenses,
+        );
+        document.getElementById("kpi-taxes").textContent = fmt(KPI_DATA.taxes);
+
+        const bEl = document.getElementById("kpi-benefice");
+        bEl.textContent = fmt(KPI_DATA.benefice);
+        bEl.className =
+          "kpi-row-value " + (KPI_DATA.benefice >= 0 ? "positive" : "negative");
+
+        // Barres proportionnelles
+        const maxVal = Math.max(
+          Math.abs(KPI_DATA.payes || 0),
+          Math.abs(KPI_DATA.ca || 0),
+          Math.abs(KPI_DATA.depenses || 0),
+          Math.abs(KPI_DATA.taxes || 0),
+          1,
+        );
+        setBar("bar-payes", KPI_DATA.payes, maxVal);
+        setBar("bar-ca", KPI_DATA.ca, maxVal);
+        setBar("bar-depenses", KPI_DATA.depenses, maxVal);
+        setBar("bar-benefice", Math.abs(KPI_DATA.benefice || 0), maxVal);
+        setBar("bar-taxes", Math.abs(KPI_DATA.taxes || 0), maxVal);
+      }
+
+      function setBar(id, val, max) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const pct = Math.min(100, Math.round((Math.abs(val || 0) / max) * 100));
+        el.style.width = pct + "%";
+      }
+
+      /* ════════════ FILTERS ════════════ */
+      function toggleGrade(chip) {
+        document
+          .querySelectorAll("#gradeChips .chip")
+          .forEach((c) => c.classList.remove("active"));
+        chip.classList.add("active");
+        activeGrade = chip.dataset.grade;
+        applyFilters();
+      }
+
+      function resetFilters() {
+        document.getElementById("searchInput").value = "";
+        activeGrade = "";
+        document.querySelectorAll("#gradeChips .chip").forEach((c, i) => {
+          c.classList[i === 0 ? "add" : "remove"]("active");
+        });
+        applyFilters();
+      }
+
+      function applyFilters() {
+        const search = document
+          .getElementById("searchInput")
+          .value.toLowerCase();
+
+        const fv = ALL_VENDEURS.filter((v) => {
+          const matchSearch =
+            !search ||
+            v.nom.toLowerCase().includes(search) ||
+            v.grade.toLowerCase().includes(search);
+          const matchGrade =
+            !activeGrade ||
+            v.grade === activeGrade ||
+            (activeGrade === "Vendeur experimenté" &&
+              v.grade.toLowerCase().includes("experimenté"));
+          return matchSearch && matchGrade;
+        });
+
+        const fr = ALL_RUNNERS.filter((r) => {
+          return !search || r.nom.toLowerCase().includes(search);
+        });
+
+        renderVendeurs(sorted("vendeurs", fv));
+        renderRunners(sorted("runners", fr));
+
+        document.getElementById("vendeurCount").textContent =
+          fv.length + " / " + ALL_VENDEURS.length;
+        document.getElementById("runnerCount").textContent =
+          fr.length + " / " + ALL_RUNNERS.length;
+      }
+
+      /* ════════════ SORT ════════════ */
+      function sortTable(table, key) {
+        const s = sortState[table];
+        s.dir = s.key === key ? s.dir * -1 : 1;
+        s.key = key;
+        applyFilters();
+      }
+
+      function sorted(table, arr) {
+        const { key, dir } = sortState[table];
+        return [...arr].sort((a, b) => {
+          let av = a[key],
+            bv = b[key];
+          if (typeof av === "string") av = av.toLowerCase();
+          if (typeof bv === "string") bv = bv.toLowerCase();
+          return av < bv ? -dir : av > bv ? dir : 0;
+        });
+      }
+
+      /* ════════════ RENDER ════════════ */
+      function gradeBadge(g) {
+        if (!g) return "";
+        const gl = g.toLowerCase();
+        let cls = "grade-vendeur";
+        if (gl === "patron") cls = "grade-patron";
+        else if (gl === "co-patron") cls = "grade-co-patron";
+        else if (gl === "responsable") cls = "grade-responsable";
+        else if (gl.includes("experimenté")) cls = "grade-vendeur-exp";
+        else if (gl === "runner") cls = "grade-runner";
+        return `<span class="grade ${cls}">${g}</span>`;
+      }
+
+      function payeClass(v) {
+        if (v > 0) return "col-paye col-positive";
+        if (v < 0) return "col-paye col-negative";
+        return "col-paye col-zero";
+      }
+
+      function numClass(v) {
+        if (v > 0) return "col-positive";
+        if (v < 0) return "col-negative";
+        return "col-zero";
+      }
+
+      function rankBadge(r) {
+        if (!r || r === "0") return '<span style="color:var(--muted)">—</span>';
+        if (r === "1er") return `<span class="rank rank-1er">🥇 1er</span>`;
+        if (r === "2éme" || r === "2ème" || r === "2eme")
+          return `<span class="rank rank-2eme">🥈 2éme</span>`;
+        if (r === "3éme" || r === "3ème" || r === "3eme")
+          return `<span class="rank rank-3eme">🥉 3éme</span>`;
+        return `<span class="rank rank-3eme">${r}</span>`;
+      }
+
+      function fmtDate(d) {
+        if (!d) return "—";
+        // Handle datetime format from sheets: "2026-06-10 00:00:00"
+        const clean = d
+          .toString()
+          .replace(/\s?00:00:00$/, "")
+          .replace(/T.*/, "")
+          .trim();
+        if (!clean) return "—";
+        // If format is YYYY-MM-DD, convert to DD/MM/YYYY
+        const m = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+        return clean;
+      }
+
+      function fmtMoney(v) {
+        if (!v && v !== 0) return "—";
+        if (v === 0) return '<span style="color:var(--muted)">0 $</span>';
+        return Math.round(v).toLocaleString("fr-FR") + " $";
+      }
+
+      function renderVendeurs(data) {
+        const tbody = document.getElementById("vendeursTbody");
+        if (!data.length) {
+          tbody.innerHTML =
+            '<tr><td colspan="13" class="empty-state">Aucun vendeur ne correspond aux filtres.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = data
+          .map(
+            (v) => `
+      <tr>
+        <td style="color:var(--muted);font-size:.8rem">${v.num}</td>
+        <td class="col-date">${fmtDate(v.date)}</td>
+        <td class="col-name">${v.nom}</td>
+        <td>${gradeBadge(v.grade)}</td>
+        <td class="col-pct">${Math.round(v.pct * 100)}%</td>
+        <td class="${numClass(v.pochettes)}">${v.pochettes || "—"}</td>
+        <td class="${numClass(v.boosters)}">${v.boosters || "—"}</td>
+        <td class="col-factures">${v.facturesBrut ? Math.round(v.facturesBrut).toLocaleString("fr-FR") + " $" : "—"}</td>
+        <td class="${numClass(v.bonusBooster)}">${v.bonusBooster ? Math.round(v.bonusBooster).toLocaleString("fr-FR") + " $" : "—"}</td>
+        <td class="${numClass(v.facturesNet)}">${v.facturesNet ? Math.round(v.facturesNet).toLocaleString("fr-FR") + " $" : "—"}</td>
+        <td class="${numClass(v.primes)}">${v.primes ? Math.round(v.primes).toLocaleString("fr-FR") + " $" : "—"}</td>
+        <td class="${payeClass(v.paye)}">${Math.round(v.paye).toLocaleString("fr-FR")} $</td>
+        <td>${rankBadge(v.rank)}</td>
+      </tr>`,
+          )
+          .join("");
+      }
+
+      function renderRunners(data) {
+        const tbody = document.getElementById("runnersTbody");
+        if (!data.length) {
+          tbody.innerHTML =
+            '<tr><td colspan="11" class="empty-state">Aucun runner.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = data
+          .map(
+            (r) => `
+      <tr>
+        <td style="color:var(--muted);font-size:.8rem">${r.num}</td>
+        <td class="col-date">${fmtDate(r.date)}</td>
+        <td class="col-name">${r.nom}</td>
+        <td>${gradeBadge(r.grade)}</td>
+        <td class="${numClass(r.runs)}">${r.runs || "—"}</td>
+        <td class="col-pct">${r.bonus || "0%"}</td>
+        <td class="${numClass(r.primes)}">${r.primes ? Math.round(r.primes).toLocaleString("fr-FR") + " $" : "—"}</td>
+        <td class="${numClass(r.partEnt)}">${r.partEnt ? Math.round(r.partEnt).toLocaleString("fr-FR") + " $" : "—"}</td>
+        <td class="${numClass(r.benefEnt)}">${r.benefEnt ? Math.round(r.benefEnt).toLocaleString("fr-FR") + " $" : "—"}</td>
+        <td class="${payeClass(r.paye)}">${Math.round(r.paye).toLocaleString("fr-FR")} $</td>
+        <td>${rankBadge(r.rank)}</td>
+      </tr>`,
+          )
+          .join("");
+      }
+
+      /* ════════════ INIT ════════════ */
+      loadData();
+    </script>
+  </body>
+</html>
